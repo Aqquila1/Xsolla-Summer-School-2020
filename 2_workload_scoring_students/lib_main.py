@@ -6,7 +6,7 @@ import math as mt
 import datetime as dt
 
 CREDENTIALS = service_account.Credentials.from_service_account_info({
-  # INSERT CREDETIALS HERE
+  # INSERT CREDENTIALS HERE
 })
 
 
@@ -22,16 +22,13 @@ Output: id	    created_at	        updated_at	        type	  subject   descriptio
 	    2520211	2018-02-05 08:59:15	2018-02-23 13:05:39	question	        Credit card payments not working from website.	I have been trying since Thursday 1st of Jan t...	  closed	360790164527	360790164527   20890258907	 21190	     316520736	other	za	     None	          None	         None	       unoffered	    None
         2740781	2018-08-17 01:48:04	2018-09-15 11:00:15	question	        Re: error showed during paid subscription on t...	__________________________________\nType your ... closed	365082895633	951579756	   360133124587	 15174	     367443669	email	za	     None	          None	         None	       offered	        None
 """
+def getFreshData(Credentials,ProjectId):
+    bigquery_sql = " ".join(["SELECT id, DATE(CAST(created_at AS DATETIME)) AS created, DATE(CAST(updated_at AS DATETIME)) AS updated, status, assignee_id, channel",
+                             "FROM `xsolla_summer_school.customer_support`",
+                             "WHERE status IN ('closed','solved')",
+                             "ORDER BY updated_at"])
 
-
-def getFreshData(Credentials, ProjectId):
-    bigquery_sql = " ".join([
-                                "SELECT id, DATE(CAST(created_at AS DATETIME)) AS created, DATE(CAST(updated_at AS DATETIME)) AS updated, status, assignee_id",
-                                "FROM `xsolla_summer_school.customer_support`",
-                                "WHERE status IN ('closed','solved')",
-                                "ORDER BY updated_at"])
-
-    dataframe = pandas_gbq.read_gbq(bigquery_sql, project_id=ProjectId, credentials=Credentials, dialect="standard")
+    dataframe = pandas_gbq.read_gbq(bigquery_sql,project_id=ProjectId, credentials=Credentials, dialect="standard")
 
     return dataframe
 
@@ -52,78 +49,80 @@ Output: assignee_id	 status	 count_last_period	count_mean_calc_period	count_sem_
         12604869947	 closed	 196	            196.62	                9.43	                1
         12604869947	 solved	 0	                0.00	                0.00	                0    
 """
-
-
-def workloadScoringByStatuses(Data, NumOfAllDays, NumOfIntervalDays):
+def workloadScoringByStatusesAndChannels(Data,NumOfAllDays,NumOfIntervalDays):
     assignee_id = np.unique(Data.assignee_id)
     assignee_id = assignee_id[0]
 
-    # splitting by status
+    #splitting by status
     statuses = np.unique(Data.status)
+    channels = np.unique(Data.channel)
     assignee_id_list = []
     status_list = []
+    channel_list = []
     avg_num_of_task_per_week_list = []
     ste_list = []
     num_tasks_per_current_week_list = []
     score_for_status_list = []
-    for status in statuses:
-        dataframe_status = Data[(Data.status == str(status))][:]
 
-        # time borders params
-        curr_date = dt.datetime.strptime(str('2017-04-01'), '%Y-%m-%d')
-        curr_date = curr_date.date()
-        delta = dt.timedelta(days=NumOfAllDays)
-        first_date = curr_date - delta
+    for channel in channels:
+        for status in statuses:
 
-        # time interval params
-        delta_interval = dt.timedelta(days=NumOfIntervalDays)
-        first_interval = first_date + delta_interval
+            dataframe_status = Data[(Data.status == str(status)) & (Data.channel == str(channel))][:]
 
-        num_of_intervals = int(NumOfAllDays / NumOfIntervalDays)
-        num_tasks_per_week = []
-        for i in range(0, num_of_intervals):
-            interval = dataframe_status[(dataframe_status.updated >= str(first_date)) & (
-                        dataframe_status.updated <= str(first_interval))][:]
-            first_date = first_date + delta_interval
-            first_interval = first_interval + delta_interval
+            #time borders params
+            curr_date = dt.datetime.strptime(str('2017-04-01'),'%Y-%m-%d')
+            curr_date = curr_date.date()
+            delta = dt.timedelta(days=NumOfAllDays)
+            first_date = curr_date-delta
 
-            if i != (num_of_intervals - 1):
-                num_of_tasks = len(np.unique(interval['id']))
-                num_tasks_per_week.append(num_of_tasks)  # history number of tasks
-            else:
-                num_tasks_per_current_week = len(np.unique(interval['id']))  # currently number of tasks
+            #time interval params
+            delta_interval = dt.timedelta(days=NumOfIntervalDays)
+            first_interval = first_date+delta_interval
 
-        avg_num_of_task_per_week = round(np.mean(num_tasks_per_week), 2)
+            num_of_intervals = int(NumOfAllDays/NumOfIntervalDays)
+            num_tasks_per_week = []
+            for i in range(0,num_of_intervals):
+                interval = dataframe_status[(dataframe_status.updated >= str(first_date)) & (dataframe_status.updated <= str(first_interval))][:]
+                first_date = first_date + delta_interval
+                first_interval = first_interval + delta_interval
 
-        # squared deviations
-        x_values = []
-        for num in num_tasks_per_week:
-            x = round((num - avg_num_of_task_per_week) ** 2, 2)
-            x_values.append(x)
+                if i != (num_of_intervals-1):
+                    num_of_tasks = len(np.unique(interval['id']))
+                    num_tasks_per_week.append(num_of_tasks) #history number of tasks
+                else:
+                    num_tasks_per_current_week = len(np.unique(interval['id'])) #currently number of tasks
 
-        # data sampling statistics
-        x_sum = round(sum(x_values), 2)  # sum of squared deviations
-        dispersion = round(x_sum / (num_of_intervals - 1), 2)  # dispersion
-        std = round(mt.sqrt(dispersion), 2)  # standart deviation for sample
-        ste = round(std / mt.sqrt(num_of_intervals), 2)  # standart error for sample
+            avg_num_of_task_per_week = round(np.mean(num_tasks_per_week),2)
 
-        # confidence interval
-        left_border = int(avg_num_of_task_per_week - ste)
-        right_border = int(avg_num_of_task_per_week + ste)
+            #squared deviations
+            x_values = []
+            for num in num_tasks_per_week:
+                x = round((num - avg_num_of_task_per_week)**2,2)
+                x_values.append(x)
 
-        # workload scoring for status
-        score_for_status = workloadScoreStatuses(left_border, right_border, num_tasks_per_current_week)
-        assignee_id_list.append(assignee_id)
-        status_list.append(status)
-        avg_num_of_task_per_week_list.append(avg_num_of_task_per_week)
-        ste_list.append(ste)
-        num_tasks_per_current_week_list.append(num_tasks_per_current_week)
-        score_for_status_list.append(score_for_status)
+            #data sampling statistics
+            x_sum = round(sum(x_values),2) #sum of squared deviations
+            dispersion = round(x_sum/(num_of_intervals-1),2) #dispersion
+            std = round(mt.sqrt(dispersion),2) #standart deviation for sample
+            ste = round(std/mt.sqrt(num_of_intervals),2) #standart error for sample
 
-    score_data = {"assignee_id": assignee_id_list, "status": status_list,
-                  "count_last_period": num_tasks_per_current_week_list,
-                  "count_mean_calc_period": avg_num_of_task_per_week_list, "count_sem_calc_period": ste_list,
-                  "score_value": score_for_status_list}
+            #confidence interval
+            left_border = int(avg_num_of_task_per_week - 2 * ste)
+            right_border = int(avg_num_of_task_per_week + 2 * ste)
+
+            #workload scoring for status
+            score_for_status = workloadScoreStatuses(left_border,right_border,num_tasks_per_current_week)
+            assignee_id_list.append(assignee_id)
+            status_list.append(status)
+            channel_list.append(channel)
+            avg_num_of_task_per_week_list.append(avg_num_of_task_per_week)
+            ste_list.append(ste)
+            num_tasks_per_current_week_list.append(num_tasks_per_current_week)
+            score_for_status_list.append(score_for_status)
+
+    score_data = {"assignee_id":assignee_id_list,"channel": channel_list, "status":status_list,
+                  "count_last_period":num_tasks_per_current_week_list,"count_mean_calc_period":avg_num_of_task_per_week_list,"count_sem_calc_period":ste_list,
+                  "score_value":score_for_status_list}
     scores = pd.DataFrame(data=score_data)
 
     return scores
@@ -141,9 +140,7 @@ Input: LeftBoard = 187
        CurrentNumOfTasks = 196
 Output: 1
 """
-
-
-def workloadScoreStatuses(LeftBoard, RightBoard, CurrentNumOfTasks):
+def workloadScoreStatuses(LeftBoard,RightBoard,CurrentNumOfTasks):
     if (LeftBoard == 0) & (CurrentNumOfTasks == 0) & (RightBoard == 0):
         score = 0
     elif (CurrentNumOfTasks >= 0) & (CurrentNumOfTasks < LeftBoard):
@@ -171,20 +168,18 @@ Input: InsertDataFrame = assignee_id	status	count_last_period	count_mean_calc_pe
        DatasetId = 'test_dataset'
        TableId = 'test_table'
 """
-
-
-def insertScoreResultData(InsertDataFrame, ProjectId, DatasetId, TableId):
+def insertScoreResultData(InsertDataFrame,ProjectId,DatasetId,TableId):
     destination_table = f"{DatasetId}.{TableId}"
 
-    #     res_df = pd.DataFrame()
-    #     res_df['assignee_id'] = InsertDataFrame['assignee_id'].astype('int')
-    #     res_df['status'] = InsertDataFrame['status'].astype('str')
-    #     res_df['count_last_period'] = InsertDataFrame['count_last_period'].astype('int')
-    #     res_df['count_mean_calc_period'] = InsertDataFrame['count_mean_calc_period'].astype('float')
-    #     res_df['count_sem_calc_period'] = InsertDataFrame['count_sem_calc_period'].astype('float')
-    #     res_df['score_value'] = InsertDataFrame['score_value'].astype('int')
-    #     res_df['developer'] = 'evgeniy.zorin'
-    #     res_df['developer'] = res_df['developer'].astype('str')
+#     res_df = pd.DataFrame()
+#     res_df['assignee_id'] = InsertDataFrame['assignee_id'].astype('int')
+#     res_df['status'] = InsertDataFrame['status'].astype('str')
+#     res_df['count_last_period'] = InsertDataFrame['count_last_period'].astype('int')
+#     res_df['count_mean_calc_period'] = InsertDataFrame['count_mean_calc_period'].astype('float')
+#     res_df['count_sem_calc_period'] = InsertDataFrame['count_sem_calc_period'].astype('float')
+#     res_df['score_value'] = InsertDataFrame['score_value'].astype('int')
+#     res_df['developer'] = 'evgeniy.zorin'
+#     res_df['developer'] = res_df['developer'].astype('str')
     res_df = InsertDataFrame
     res_df['developer'] = 'evgeniy.zorin'
     res_df['developer'] = res_df['developer'].astype('str')
@@ -192,12 +187,6 @@ def insertScoreResultData(InsertDataFrame, ProjectId, DatasetId, TableId):
 
 
 def get_total_score(data):
-    closed_score = data[data['status'] == 'closed']['score_value'].to_numpy()
-    if len(closed_score) == 0:
-        closed_score = [0]
-    solved_score = data[data['status'] == 'solved']['score_value'].to_numpy()
-    if len(solved_score) == 0:
-        solved_score = [0]
-    total_score = (solved_score + closed_score) / 2
-    score_data = {'assignee_id': data['assignee_id'].iloc[0], 'score_value': total_score}
-    return pd.DataFrame(data=score_data)
+    total_score = data[data['count_last_period'] > 0]['score_value'].median()
+    score_data = {'assignee_id': data['assignee_id'].iloc[0], 'score_value': [total_score]}
+    return pd.DataFrame(score_data).fillna(0)
