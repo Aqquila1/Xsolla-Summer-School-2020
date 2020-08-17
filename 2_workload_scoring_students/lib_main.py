@@ -5,11 +5,6 @@ import pandas as pd
 import math as mt
 import datetime as dt
 
-CREDENTIALS = service_account.Credentials.from_service_account_info({
-  # INSERT CREDENTIALS HERE
-})
-
-
 """[summary]
 Funtion for getting fresh data from BigQuery for workload scoring model
 [description]

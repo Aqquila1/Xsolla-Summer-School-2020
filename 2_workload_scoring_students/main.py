@@ -1,7 +1,7 @@
 import lib_main
 import pandas as pd
 
-DataFrame = lib_main.getFreshData(lib_main.CREDENTIALS,'findcsystem')
+DataFrame = lib_main.getFreshData('findcsystem')
 DataFrame = DataFrame.fillna('None')
 
 users = DataFrame['assignee_id'].unique()
